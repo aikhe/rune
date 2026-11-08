@@ -6,8 +6,10 @@
 //! hands the caption's band to the client area and keeps the side and bottom borders, which
 //! Windows 10 and 11 draw invisibly outside the window, as resize edges. The top resize edge
 //! is then a band inside the client area that `WM_NCHITTEST` reports as `HTTOP`. Windows 11
-//! draws the window's 1 px border over the client area; Windows 10 draws it only around
-//! non-client pixels, so there a restored window keeps a 1 px non-client row at the top.
+//! draws the window's 1 px border over the client area. Windows 10 draws it only around
+//! non-client pixels, but a non-client row at the top makes its DWM draw the whole default
+//! title bar above the window, so the client area takes the top there too and Rune draws
+//! that border itself (`Caption::top_border`), as Windows Terminal does.
 //!
 //! Rune draws the caption buttons as elements (`titlebar::caption`), and this procedure answers
 //! hit tests over them as `HTMINBUTTON`, `HTMAXBUTTON` and `HTCLOSE`. Windows 11 shows its snap
@@ -107,7 +109,7 @@ pub(crate) fn request_inner_size(window: &winit::window::Window, size: (f32, f32
     unsafe {
         if IsZoomed(hwnd) != 0 { ShowWindow(hwnd, SW_RESTORE); }
         let b = borders(hwnd, GetDpiForWindow(hwnd));
-        SetWindowPos(hwnd, std::ptr::null_mut(), 0, 0, w + b.left + b.right, h + top_border(hwnd) + b.bottom, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+        SetWindowPos(hwnd, std::ptr::null_mut(), 0, 0, w + b.left + b.right, h + b.bottom, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
     }
     true
 }
@@ -183,7 +185,7 @@ unsafe extern "system" fn subclass(hwnd: HWND, message: u32, wparam: WPARAM, lpa
                 let params = &mut *(lparam as *mut NCCALCSIZE_PARAMS);
                 let outer = params.rgrc[0];
                 DefSubclassProc(hwnd, message, wparam, lparam);
-                params.rgrc[0].top = outer.top + top_border(hwnd);
+                params.rgrc[0].top = outer.top;
                 if IsZoomed(hwnd) != 0 { fit_maximized(hwnd, &outer, &mut params.rgrc[0]); }
                 return 0;
             }
@@ -249,7 +251,7 @@ unsafe extern "system" fn subclass(hwnd: HWND, message: u32, wparam: WPARAM, lpa
                 let (min, max) = (info.ptMinTrackSize.y, info.ptMaxTrackSize.y);
                 let result = DefSubclassProc(hwnd, message, wparam, lparam);
                 // winit sized them for a title bar: take it back off what it set.
-                let top = borders(hwnd, GetDpiForWindow(hwnd)).top - top_border(hwnd);
+                let top = borders(hwnd, GetDpiForWindow(hwnd)).top;
                 if info.ptMinTrackSize.y != min { info.ptMinTrackSize.y = (info.ptMinTrackSize.y - top).max(1); }
                 if info.ptMaxTrackSize.y != max { info.ptMaxTrackSize.y = (info.ptMaxTrackSize.y - top).max(1); }
                 return result;
@@ -261,7 +263,7 @@ unsafe extern "system" fn subclass(hwnd: HWND, message: u32, wparam: WPARAM, lpa
                 let b = borders(hwnd, dpi);
                 let out = &mut *(lparam as *mut SIZE);
                 out.cx = (f64::from(w) * ratio).round() as i32 + b.left + b.right;
-                out.cy = (f64::from(h) * ratio).round() as i32 + top_border(hwnd) + b.bottom;
+                out.cy = (f64::from(h) * ratio).round() as i32 + b.bottom;
                 return 1;
             }
             // winit sizes the window for a title bar; Windows' rect (from WM_GETDPISCALEDSIZE)
@@ -314,6 +316,7 @@ impl State {
             height: self.height.get(),
             state: self.caption.get(),
             maximized: zoomed,
+            top_border: windows_10() && !zoomed,
             minimizable: style & WS_MINIMIZEBOX != 0,
             maximizable: style & WS_MAXIMIZEBOX != 0,
             hidden: !framed(hwnd),
@@ -382,13 +385,6 @@ fn caption_hit(state: &State, hwnd: HWND, point: POINT) -> Option<CaptionButton>
 fn frame_thickness(dpi: u32) -> i32 {
     // SAFETY: reads system metrics.
     unsafe { GetSystemMetricsForDpi(SM_CYFRAME, dpi) + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi) }
-}
-
-/// The non-client pixels left at the top: Windows 10 draws a restored window's top border only
-/// over non-client pixels.
-fn top_border(hwnd: HWND) -> i32 {
-    // SAFETY: reads a live window's state.
-    i32::from(windows_10() && unsafe { IsZoomed(hwnd) } == 0)
 }
 
 /// Windows before 11 (build 22000). `RtlGetVersion` reports the real build, whatever the

@@ -147,6 +147,9 @@ pub(crate) struct Caption {
     pub height: f32,
     pub state: CaptionState,
     pub maximized: bool,
+    /// Windows 10, restored: the 1 px top border its DWM no longer draws once the client area
+    /// takes the whole top, which the frame draws instead.
+    pub top_border: bool,
     /// The window has a minimize box (`WS_MINIMIZEBOX`); without one, the button is dimmed.
     pub minimizable: bool,
     /// The window has a maximize box (`WS_MAXIMIZEBOX`); a window without one, a window that
@@ -158,7 +161,7 @@ pub(crate) struct Caption {
 
 impl Caption {
     pub(crate) fn new(height: f32) -> Self {
-        Self { height, state: CaptionState::Idle, maximized: false, minimizable: true, maximizable: true, hidden: false }
+        Self { height, state: CaptionState::Idle, maximized: false, top_border: false, minimizable: true, maximizable: true, hidden: false }
     }
 
     /// The buttons drawn, left to right. A window that can neither minimize nor maximize shows

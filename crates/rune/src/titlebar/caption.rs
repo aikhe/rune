@@ -33,7 +33,16 @@ pub(super) fn size(height: f32, scale: f32) -> (f32, f32) {
 /// full-screen window keeps the frame with no buttons in it, so the view's paths stay.
 pub(crate) fn frame(root: El, caption: &Caption, symbol: Color, scale: f32, fit_height: bool) -> El {
     let root = if fit_height { root.w_full() } else { root.w_full().h_full() };
-    el().key(FRAME_KEY).child(root).children((!caption.hidden).then(|| buttons(caption, symbol, scale)))
+    el().key(FRAME_KEY)
+        .child(root)
+        .children((!caption.hidden).then(|| buttons(caption, symbol, scale)))
+        .children((caption.top_border && !caption.hidden).then(|| top_border(symbol, scale)))
+}
+
+/// Windows 10's top border (`Caption::top_border`): one device pixel across the window's top,
+/// in the symbol colour's press wash.
+fn top_border(symbol: Color, scale: f32) -> El {
+    el().key("rune-top-border").pin(Some(0.0), Some(0.0), Some(0.0), None).h(1.0 / scale).fill(symbol.alpha(symbol.a * PRESSED_ALPHA))
 }
 
 /// The frame `frame` puts around the view's root.
