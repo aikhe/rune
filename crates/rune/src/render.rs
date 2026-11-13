@@ -451,12 +451,18 @@ impl Gpu {
         // A compositor that asks for immediates (`Compositor::features`) gets all the adapter has.
         let max_immediate_size = if required_features.contains(wgpu::Features::IMMEDIATES) { adapter.limits().max_immediate_size } else { 0 };
         let adapter_limits = adapter.limits();
+        // The size of a DX12 device's descriptor heap, which wgpu makes whole with the device:
+        // the default million is about 90 MB of process memory before a frame is drawn. A bind
+        // group takes a descriptor per buffer or texture it binds, so this is room for over ten
+        // thousand of them alive at once. No other backend reads it.
+        let max_non_sampler_bindings = 1 << 16;
         let required_limits = if adapter_limits.max_inter_stage_shader_variables < wgpu::Limits::default().max_inter_stage_shader_variables
             || adapter_limits.max_color_attachments < wgpu::Limits::default().max_color_attachments
             || adapter_limits.max_compute_workgroup_storage_size < wgpu::Limits::default().max_compute_workgroup_storage_size
         {
             wgpu::Limits {
                 max_immediate_size,
+                max_non_sampler_bindings,
                 ..wgpu::Limits::downlevel_defaults()
                     .using_resolution(adapter_limits.clone())
                     .using_alignment(adapter_limits)
@@ -464,6 +470,7 @@ impl Gpu {
         } else {
             wgpu::Limits {
                 max_immediate_size,
+                max_non_sampler_bindings,
                 ..wgpu::Limits::default()
                     .using_resolution(adapter_limits.clone())
                     .using_alignment(adapter_limits)
